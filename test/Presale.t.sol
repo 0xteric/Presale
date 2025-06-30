@@ -10,6 +10,7 @@ contract PresaleTest is Test {
     address user2 = vm.addr(1);
     address USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address USDT = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
+    address dataFeedAddress = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612;
 
     Presale presale;
 
@@ -20,15 +21,15 @@ contract PresaleTest is Test {
         }
         phases[0][0] = 333_333_333;
         phases[0][1] = 1e6;
-        phases[0][2] = block.timestamp + 1 days;
+        phases[0][2] = 1 days;
         phases[1][0] = 333_333_333;
         phases[1][1] = 2e6;
-        phases[1][2] = block.timestamp + 2 days;
+        phases[1][2] = 1 days;
         phases[2][0] = 333_333_333;
         phases[2][1] = 3e6;
-        phases[2][2] = block.timestamp + 3 days;
+        phases[2][2] = 1 days;
 
-        presale = new Presale(USDT, USDC, 0x0b07f64ABc342B68AEc57c0936E4B6fD4452967E, 1_000_000_000, phases, block.timestamp, block.timestamp + 4 days);
+        presale = new Presale(USDT, USDC, 0x0b07f64ABc342B68AEc57c0936E4B6fD4452967E, dataFeedAddress, 1_000_000_000, phases, block.timestamp, block.timestamp + 4 days);
     }
 
     function testBlackList() public {
@@ -37,5 +38,10 @@ contract PresaleTest is Test {
         bool blacklisted = presale.isBlacklisted(user2);
 
         assertTrue(blacklisted);
+    }
+
+    function testGetEthPrice() public {
+        uint price = presale.getEthPrice();
+        console.log(price);
     }
 }

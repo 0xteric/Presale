@@ -6,6 +6,7 @@ import "../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import "../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import "./interfaces/IAggregator.sol";
 
 contract Presale is Ownable {
     using SafeERC20 for IERC20;
@@ -13,17 +14,31 @@ contract Presale is Ownable {
     address public USDT;
     address public USDC;
     address public fundsReceiver;
+    address public dataFeedAddress;
 
     uint public totalTokenSale;
     uint public startTime;
     uint public endTime;
     uint public currentPhase;
+    uint public totalSold;
 
     uint[][3] public phases;
 
     mapping(address => bool) public isBlacklisted;
+    mapping(address => uint) public userBalance;
 
-    constructor(address _USDT, address _USDC, address _fundsReceiver, uint _totalTokenSale, uint[][3] memory _phases, uint _startTime, uint _endTime) Ownable(msg.sender) {
+    event Buy(address user, uint amount);
+
+    constructor(
+        address _USDT,
+        address _USDC,
+        address _fundsReceiver,
+        address _dataFeedAddress,
+        uint _totalTokenSale,
+        uint[][3] memory _phases,
+        uint _startTime,
+        uint _endTime
+    ) Ownable(msg.sender) {
         USDT = _USDT;
         USDC = _USDC;
         fundsReceiver = _fundsReceiver;
@@ -31,6 +46,7 @@ contract Presale is Ownable {
         phases = _phases;
         startTime = _startTime;
         endTime = _endTime;
+        dataFeedAddress = _dataFeedAddress;
 
         require(endTime > startTime, "Incorrect presale duration");
     }
@@ -54,6 +70,20 @@ contract Presale is Ownable {
     }
 
     /**
+     * Checks and updates phase state
+     * @param _amount amount of tokens to buy
+     */
+    function managePhase(uint _amount) private returns (uint phase) {
+        if (((totalSold + _amount) >= phases[currentPhase][0] || block.timestamp >= phases[currentPhase][2]) && currentPhase < 3) currentPhase++;
+        phase = currentPhase;
+    }
+
+    function getEthPrice() public view returns (uint) {
+        (, int256 price, , , ) = IAggregator(dataFeedAddress).latestRoundData();
+        return uint(price * 1e10);
+    }
+
+    /**
      * Buys the presale token using USDT or USDC
      * @param _payingToken USDT or USDC
      * @param _payingAmount amount of usd to pay
@@ -70,6 +100,35 @@ contract Presale is Ownable {
         } else {
             amountToRecive = (_payingAmount * 10 ** (18 - ERC20(_payingToken).decimals()) * 1e6) / phases[currentPhase][1];
         }
+        managePhase(amountToRecive);
+        totalSold += amountToRecive;
+        require(totalSold <= totalTokenSale, "Sold out!");
+        userBalance[msg.sender] += amountToRecive;
+        IERC20(_payingToken).safeTransferFrom(msg.sender, fundsReceiver, _payingAmount);
+
+        emit Buy(msg.sender, _payingAmount);
+    }
+
+    function buyWithNative() external {
+        require(!isBlacklisted[msg.sender], "Is blacklisted");
+        require(block.timestamp >= startTime, "Presale is not live yet");
+        require(block.timestamp <= endTime, "Presale ended");
+
+        uint amountToPayInUsd = (msg.value * getEthPrice()) / 1e18;
+
+        uint amountToReceive = (amountToPayInUsd * 1e6) / phases[currentPhase][1];
+
+        managePhase(amountToReceive);
+
+        totalSold += amountToReceive;
+        require(totalSold <= totalTokenSale, "Sold out!");
+
+        (bool success, ) = fundsReceiver.call{value: msg.value}("");
+        require(success, "Transfer failed!");
+
+        userBalance[msg.sender] += amountToReceive;
+
+        emit Buy(msg.sender, amountToReceive);
     }
 
     /**
