@@ -15,12 +15,14 @@ contract Presale is Ownable {
     address public USDC;
     address public fundsReceiver;
     address public dataFeedAddress;
+    address public saleTokenAddress;
 
     uint public totalTokenSale;
     uint public startTime;
     uint public endTime;
     uint public currentPhase;
     uint public totalSold;
+    uint public maxBuyAmount;
 
     uint[][3] public phases;
 
@@ -30,15 +32,18 @@ contract Presale is Ownable {
     event Buy(address user, uint amount);
 
     constructor(
+        address _saleTokenAddress,
         address _USDT,
         address _USDC,
         address _fundsReceiver,
         address _dataFeedAddress,
         uint _totalTokenSale,
+        uint _maxBuyAmount,
         uint[][3] memory _phases,
         uint _startTime,
         uint _endTime
     ) Ownable(msg.sender) {
+        saleTokenAddress = _saleTokenAddress;
         USDT = _USDT;
         USDC = _USDC;
         fundsReceiver = _fundsReceiver;
@@ -47,35 +52,9 @@ contract Presale is Ownable {
         startTime = _startTime;
         endTime = _endTime;
         dataFeedAddress = _dataFeedAddress;
+        maxBuyAmount = _maxBuyAmount;
 
         require(endTime > startTime, "Incorrect presale duration");
-    }
-
-    /**
-     * Adds an address to the blacklist
-     * @param _address the address to blacklist
-     */
-    function blackList(address _address) external onlyOwner {
-        require(!isBlacklisted[_address], "Already blacklisted.");
-        isBlacklisted[_address] = true;
-    }
-
-    /**
-     * Removes an address to the blacklist
-     * @param _address the address to remove from the blacklist
-     */
-    function removeBlackList(address _address) external onlyOwner {
-        require(isBlacklisted[_address], "IS not blacklisted.");
-        isBlacklisted[_address] = false;
-    }
-
-    /**
-     * Checks and updates phase state
-     * @param _amount amount of tokens to buy
-     */
-    function managePhase(uint _amount) private returns (uint phase) {
-        if (((totalSold + _amount) >= phases[currentPhase][0] || block.timestamp >= phases[currentPhase][2]) && currentPhase < 3) currentPhase++;
-        phase = currentPhase;
     }
 
     function getEthPrice() public view returns (uint) {
@@ -94,31 +73,36 @@ contract Presale is Ownable {
         require(block.timestamp <= endTime, "Presale ended");
         require(_payingToken == USDT || _payingToken == USDC, "Paying token not supported");
 
-        uint amountToRecive;
-        if (ERC20(_payingToken).decimals() == 18) {
-            amountToRecive = (_payingAmount * 1e6) / phases[currentPhase][1];
-        } else {
-            amountToRecive = (_payingAmount * 10 ** (18 - ERC20(_payingToken).decimals()) * 1e6) / phases[currentPhase][1];
-        }
-        managePhase(amountToRecive);
-        totalSold += amountToRecive;
+        managePhaseTimestamp();
+
+        (uint amountToReceive, uint phase) = managePhaseCrossing(_payingAmount, _payingToken);
+
+        currentPhase = phase;
+
+        totalSold += amountToReceive;
+        require(amountToReceive <= maxBuyAmount, "Too much amount for a single buy");
         require(totalSold <= totalTokenSale, "Sold out!");
-        userBalance[msg.sender] += amountToRecive;
+        userBalance[msg.sender] += amountToReceive;
         IERC20(_payingToken).safeTransferFrom(msg.sender, fundsReceiver, _payingAmount);
 
         emit Buy(msg.sender, _payingAmount);
     }
 
-    function buyWithNative() external {
+    /**
+     * Buys the presale token using native currency
+     */
+    function buyWithNative() external payable {
         require(!isBlacklisted[msg.sender], "Is blacklisted");
         require(block.timestamp >= startTime, "Presale is not live yet");
         require(block.timestamp <= endTime, "Presale ended");
 
+        managePhaseTimestamp();
+
         uint amountToPayInUsd = (msg.value * getEthPrice()) / 1e18;
 
-        uint amountToReceive = (amountToPayInUsd * 1e6) / phases[currentPhase][1];
-
-        managePhase(amountToReceive);
+        (uint amountToReceive, uint phase) = managePhaseCrossing(amountToPayInUsd, address(0));
+        currentPhase = phase;
+        require(amountToReceive <= maxBuyAmount, "Too much amount for a single buy");
 
         totalSold += amountToReceive;
         require(totalSold <= totalTokenSale, "Sold out!");
@@ -129,6 +113,77 @@ contract Presale is Ownable {
         userBalance[msg.sender] += amountToReceive;
 
         emit Buy(msg.sender, amountToReceive);
+    }
+
+    /**
+     * Claims the tokens bought
+     */
+    function claim() external {
+        require(block.timestamp > endTime, "Presale is live");
+        uint amount = userBalance[msg.sender];
+        delete userBalance[msg.sender];
+
+        IERC20(saleTokenAddress).safeTransfer(msg.sender, amount);
+    }
+
+    function managePhaseCrossing(uint _amountIn, address _tokenIn) public view returns (uint, uint) {
+        uint8 tokenInDecimals = _tokenIn == address(0) ? 18 : ERC20(_tokenIn).decimals();
+
+        uint remainingAmount = _amountIn;
+        uint tokensToReceive = 0;
+        uint tempTotalSold = totalSold;
+        uint phase = currentPhase;
+
+        while (remainingAmount > 0 && phase < 3) {
+            uint tokensLeftInPhase = phases[phase][0] > tempTotalSold ? phases[phase][0] - tempTotalSold : 0;
+
+            if (tokensLeftInPhase == 0) {
+                phase++;
+                tempTotalSold = 0;
+                continue;
+            }
+
+            uint phasePrice = phases[phase][1];
+            uint phaseValueUSD = (tokensLeftInPhase * phasePrice) / 1e6;
+
+            if (remainingAmount <= phaseValueUSD) {
+                tokensToReceive += (remainingAmount * 10 ** (18 - tokenInDecimals) * 1e6) / phasePrice;
+                remainingAmount = 0;
+            } else {
+                tokensToReceive += (tokensLeftInPhase * 10 ** (18 - tokenInDecimals));
+                remainingAmount -= phaseValueUSD;
+                tempTotalSold = 0;
+                phase++;
+            }
+        }
+
+        require(remainingAmount == 0, "Not enough tokens in presale phases");
+
+        return (tokensToReceive, phase);
+    }
+
+    function managePhaseTimestamp() public {
+        if (block.timestamp >= phases[currentPhase][2] && currentPhase < 3) {
+            currentPhase++;
+        }
+    }
+
+    /**
+     * Adds an address to the blacklist
+     * @param _address the address to blacklist
+     */
+    function blackList(address _address) external onlyOwner {
+        require(!isBlacklisted[_address], "Already blacklisted.");
+        isBlacklisted[_address] = true;
+    }
+
+    /**
+     * Removes an address to the blacklist
+     * @param _address the address to remove from the blacklist
+     */
+    function removeBlackList(address _address) external onlyOwner {
+        require(isBlacklisted[_address], "IS not blacklisted.");
+        isBlacklisted[_address] = false;
     }
 
     /**
