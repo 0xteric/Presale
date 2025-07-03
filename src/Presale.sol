@@ -94,7 +94,7 @@ contract Presale is Ownable {
 
         managePhaseTimestamp();
 
-        uint amountToPayInUsd = (msg.value * getEthPrice()) / 1e18;
+        uint amountToPayInUsd = (msg.value * getEthPrice()) / 1e30;
 
         (uint amountToReceive, uint phase) = managePhaseCrossing(amountToPayInUsd, address(0));
         currentPhase = phase;

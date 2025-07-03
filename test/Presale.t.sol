@@ -113,8 +113,8 @@ contract PresaleTest is Test {
         vm.startPrank(user);
         vm.deal(user, 100 ether);
 
-        uint amountToPay = 100 ether;
-        uint amountToPayInUsd = (presale.getEthPrice() * amountToPay) / 1e18;
+        uint amountToPay = 10 ether;
+        uint amountToPayInUsd = (presale.getEthPrice() * amountToPay) / 1e30;
 
         (uint amountToReceive, uint phase) = presale.managePhaseCrossing(amountToPayInUsd, address(0));
 
