@@ -22,7 +22,6 @@ contract Presale is Ownable {
     uint public endTime;
     uint public currentPhase;
     uint public totalSold;
-    uint public maxBuyAmount;
 
     uint[][3] public phases;
 
@@ -38,7 +37,6 @@ contract Presale is Ownable {
         address _fundsReceiver,
         address _dataFeedAddress,
         uint _totalTokenSale,
-        uint _maxBuyAmount,
         uint[][3] memory _phases,
         uint _startTime,
         uint _endTime
@@ -52,7 +50,6 @@ contract Presale is Ownable {
         startTime = _startTime;
         endTime = _endTime;
         dataFeedAddress = _dataFeedAddress;
-        maxBuyAmount = _maxBuyAmount;
 
         require(endTime > startTime, "Incorrect presale duration");
     }
@@ -80,7 +77,6 @@ contract Presale is Ownable {
         currentPhase = phase;
 
         totalSold += amountToReceive;
-        require(amountToReceive <= maxBuyAmount, "Too much amount for a single buy");
         require(totalSold <= totalTokenSale, "Sold out!");
         userBalance[msg.sender] += amountToReceive;
         IERC20(_payingToken).safeTransferFrom(msg.sender, fundsReceiver, _payingAmount);
@@ -102,7 +98,6 @@ contract Presale is Ownable {
 
         (uint amountToReceive, uint phase) = managePhaseCrossing(amountToPayInUsd, address(0));
         currentPhase = phase;
-        require(amountToReceive <= maxBuyAmount, "Too much amount for a single buy");
 
         totalSold += amountToReceive;
         require(totalSold <= totalTokenSale, "Sold out!");
@@ -144,15 +139,14 @@ contract Presale is Ownable {
             }
 
             uint phasePrice = phases[phase][1];
-            uint phaseValueUSD = (tokensLeftInPhase * phasePrice) / 1e6;
+            uint phaseValueUSD = (tokensLeftInPhase * phasePrice) / 1e18;
 
             if (remainingAmount <= phaseValueUSD) {
                 tokensToReceive += (remainingAmount * 10 ** (18 - tokenInDecimals) * 1e6) / phasePrice;
                 remainingAmount = 0;
             } else {
-                tokensToReceive += (tokensLeftInPhase * 10 ** (18 - tokenInDecimals));
+                tokensToReceive += (tokensLeftInPhase);
                 remainingAmount -= phaseValueUSD;
-                tempTotalSold = 0;
                 phase++;
             }
         }

@@ -38,7 +38,6 @@ contract PresaleTest is Test {
             0x0b07f64ABc342B68AEc57c0936E4B6fD4452967E,
             dataFeedAddress,
             1_000_000_000 * 1e18,
-            1_000_000 * 1e18,
             phases,
             block.timestamp,
             block.timestamp + 4 days
@@ -57,18 +56,73 @@ contract PresaleTest is Test {
         assertEq(presaleBalance, 1_000_000_000 * 1e18);
     }
 
-    function testBuyWithStable() public {
+    function testBuyWithStableBasic() public {
         vm.startPrank(user);
 
-        uint amountToPay = 1_000_000_000 * phases[0][1];
+        address tokenToPay = USDC;
+        uint amountToPay = 1_000 * 1e6;
 
-        IERC20(USDC).approve(address(presale), amountToPay);
+        (uint amountToReceive, uint phase) = presale.managePhaseCrossing(amountToPay, tokenToPay);
 
-        presale.buyWithStable(USDC, amountToPay);
+        IERC20(tokenToPay).approve(address(presale), amountToPay);
+
+        presale.buyWithStable(tokenToPay, amountToPay);
 
         uint userBalance = presale.userBalance(user);
 
-        assertEq(userBalance, presale.totalTokenSale());
+        assertEq(userBalance, amountToReceive);
+    }
+
+    function testBuyWithStablePhaseCrossing() public {
+        vm.startPrank(user);
+
+        address tokenToPay = USDC;
+        uint amountToPay = 1_100_000 * 1e6;
+
+        (uint amountToReceive, uint phase) = presale.managePhaseCrossing(amountToPay, tokenToPay);
+
+        IERC20(tokenToPay).approve(address(presale), amountToPay);
+
+        presale.buyWithStable(tokenToPay, amountToPay);
+
+        uint userBalance = presale.userBalance(user);
+
+        assertEq(amountToReceive, userBalance);
+        assertEq(phase, 1);
+    }
+
+    function testBuyWithStableFullPhase() public {
+        vm.startPrank(user);
+
+        address tokenToPay = USDC;
+        uint amountToPay = 1_000_000_002 * 1e3;
+
+        (uint amountToReceive, uint phase) = presale.managePhaseCrossing(amountToPay, tokenToPay);
+
+        IERC20(tokenToPay).approve(address(presale), amountToPay);
+
+        presale.buyWithStable(tokenToPay, amountToPay);
+
+        uint userBalance = presale.userBalance(user);
+
+        assertEq(amountToReceive, phases[0][0]);
+        assertEq(amountToReceive, userBalance);
+    }
+
+    function testBuyWithNative() public {
+        vm.startPrank(user);
+        vm.deal(user, 100 ether);
+
+        uint amountToPay = 100 ether;
+        uint amountToPayInUsd = (presale.getEthPrice() * amountToPay) / 1e18;
+
+        (uint amountToReceive, uint phase) = presale.managePhaseCrossing(amountToPayInUsd, address(0));
+
+        presale.buyWithNative{value: amountToPay}();
+
+        uint userBalance = presale.userBalance(user);
+
+        assertEq(amountToReceive, userBalance);
     }
 
     function testBlackList() public {
