@@ -122,7 +122,7 @@ contract Presale is Ownable {
     }
 
     function managePhaseCrossing(uint _amountIn, address _tokenIn) public view returns (uint, uint) {
-        uint8 tokenInDecimals = _tokenIn == address(0) ? 18 : ERC20(_tokenIn).decimals();
+        uint8 tokenInDecimals = _tokenIn == address(0) ? 6 : ERC20(_tokenIn).decimals();
 
         uint remainingAmount = _amountIn;
         uint tokensToReceive = 0;
@@ -134,7 +134,6 @@ contract Presale is Ownable {
 
             if (tokensLeftInPhase == 0) {
                 phase++;
-                tempTotalSold = 0;
                 continue;
             }
 
@@ -147,6 +146,7 @@ contract Presale is Ownable {
             } else {
                 tokensToReceive += (tokensLeftInPhase);
                 remainingAmount -= phaseValueUSD;
+                tempTotalSold = totalSold + tokensToReceive;
                 phase++;
             }
         }

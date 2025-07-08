@@ -77,7 +77,7 @@ contract PresaleTest is Test {
         vm.startPrank(user);
 
         address tokenToPay = USDC;
-        uint amountToPay = 1_100_000 * 1e6;
+        uint amountToPay = 3_000_000 * 1e6;
 
         (uint amountToReceive, uint phase) = presale.managePhaseCrossing(amountToPay, tokenToPay);
 
@@ -88,7 +88,7 @@ contract PresaleTest is Test {
         uint userBalance = presale.userBalance(user);
 
         assertEq(amountToReceive, userBalance);
-        assertEq(phase, 1);
+        assertEq(phase, presale.currentPhase());
     }
 
     function testBuyWithStableFullPhase() public {
@@ -111,7 +111,7 @@ contract PresaleTest is Test {
 
     function testBuyWithNative() public {
         vm.startPrank(user);
-        vm.deal(user, 100 ether);
+        vm.deal(user, 10 ether);
 
         uint amountToPay = 10 ether;
         uint amountToPayInUsd = (presale.getEthPrice() * amountToPay) / 1e30;
@@ -123,6 +123,24 @@ contract PresaleTest is Test {
         uint userBalance = presale.userBalance(user);
 
         assertEq(amountToReceive, userBalance);
+        assertEq(presale.currentPhase(), phase);
+    }
+
+    function testBuyWithNativePhaseCrossing() public {
+        vm.startPrank(user);
+        vm.deal(user, 1000 ether);
+
+        uint amountToPay = 1000 ether;
+        uint amountToPayInUsd = (presale.getEthPrice() * amountToPay) / 1e30;
+
+        (uint amountToReceive, uint phase) = presale.managePhaseCrossing(amountToPayInUsd, address(0));
+
+        presale.buyWithNative{value: amountToPay}();
+
+        uint userBalance = presale.userBalance(user);
+
+        assertEq(amountToReceive, userBalance);
+        assertEq(presale.currentPhase(), phase);
     }
 
     function testBlackList() public {
