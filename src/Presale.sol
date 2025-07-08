@@ -176,7 +176,7 @@ contract Presale is Ownable {
      * @param _address the address to remove from the blacklist
      */
     function removeBlackList(address _address) external onlyOwner {
-        require(isBlacklisted[_address], "IS not blacklisted.");
+        require(isBlacklisted[_address], "Not blacklisted.");
         isBlacklisted[_address] = false;
     }
 
@@ -191,9 +191,12 @@ contract Presale is Ownable {
 
     /**
      * Withdraws all the native balance from the contract, used to recover funds if required
+     * @param _amount amount of tokens to withdraw
      */
-    function emergencyNativeWithdraw() external onlyOwner {
-        (bool success, ) = msg.sender.call{value: address(this).balance}("");
+    function emergencyNativeWithdraw(uint _amount) external onlyOwner {
+        (bool success, ) = msg.sender.call{value: _amount}("");
         require(success, "Transfer failed");
     }
+
+    fallback() external payable {}
 }

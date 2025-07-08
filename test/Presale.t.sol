@@ -23,9 +23,9 @@ contract PresaleTest is Test {
     function setUp() public {
         vm.startPrank(deployer);
 
-        phases[0] = [333333334 * 1e18, 3000, block.timestamp + 1 days];
-        phases[1] = [666666667 * 1e18, 4000, block.timestamp + 1 days];
-        phases[2] = [1000000000 * 1e18, 5000, block.timestamp + 1 days];
+        phases[0] = [333_333_334 * 1e18, 3000, block.timestamp + 1 days];
+        phases[1] = [666_666_667 * 1e18, 4000, block.timestamp + 1 days];
+        phases[2] = [1_000_000_000 * 1e18, 5000, block.timestamp + 1 days];
 
         mockToken = new MockToken();
 
@@ -71,6 +71,7 @@ contract PresaleTest is Test {
         uint userBalance = presale.userBalance(user);
 
         assertEq(userBalance, amountToReceive);
+        vm.stopPrank();
     }
 
     function testBuyWithStablePhaseCrossing() public {
@@ -89,6 +90,7 @@ contract PresaleTest is Test {
 
         assertEq(amountToReceive, userBalance);
         assertEq(phase, presale.currentPhase());
+        vm.stopPrank();
     }
 
     function testBuyWithStableFullPhase() public {
@@ -107,6 +109,7 @@ contract PresaleTest is Test {
 
         assertEq(amountToReceive, phases[0][0]);
         assertEq(amountToReceive, userBalance);
+        vm.stopPrank();
     }
 
     function testBuyWithNative() public {
@@ -124,6 +127,7 @@ contract PresaleTest is Test {
 
         assertEq(amountToReceive, userBalance);
         assertEq(presale.currentPhase(), phase);
+        vm.stopPrank();
     }
 
     function testBuyWithNativePhaseCrossing() public {
@@ -141,13 +145,139 @@ contract PresaleTest is Test {
 
         assertEq(amountToReceive, userBalance);
         assertEq(presale.currentPhase(), phase);
+        vm.stopPrank();
     }
 
-    function testBlackList() public {
+    function testBuyExceedsPresale() public {
+        vm.startPrank(user);
+        vm.deal(user, 2000 ether);
+
+        vm.expectRevert("Not enough tokens in presale phases");
+        presale.buyWithNative{value: 2000 ether}();
+        vm.stopPrank();
+    }
+
+    function testClaimTokens() public {
+        vm.startPrank(user);
+
+        uint amountToBuy = 100_000 * 1e6;
+
+        IERC20(USDC).approve(address(presale), amountToBuy);
+
+        presale.buyWithStable(USDC, amountToBuy);
+
+        uint presaleBalanceBefore = presale.userBalance(user);
+        uint tokenBalanceBefore = IERC20(address(mockToken)).balanceOf(user);
+
+        vm.warp(block.timestamp + 5 days);
+
+        presale.claim();
+
+        uint presaleBalanceAfter = presale.userBalance(user);
+        uint tokenBalanceAfter = IERC20(address(mockToken)).balanceOf(user);
+
+        assertEq(presaleBalanceAfter, tokenBalanceBefore);
+        assertEq(presaleBalanceBefore, tokenBalanceAfter);
+        vm.stopPrank();
+    }
+
+    function testClaimBeforeTime() public {
+        vm.startPrank(user);
+
+        uint amountToBuy = 100_000 * 1e6;
+
+        IERC20(USDC).approve(address(presale), amountToBuy);
+
+        presale.buyWithStable(USDC, amountToBuy);
+
+        vm.warp(block.timestamp + 3 days);
+
+        vm.expectRevert("Presale is live");
+        presale.claim();
+        vm.stopPrank();
+    }
+
+    function testAddToBlackList() public {
+        vm.startPrank(deployer);
+
         presale.blackList(user2);
 
         bool blacklisted = presale.isBlacklisted(user2);
 
         assertTrue(blacklisted);
+
+        vm.stopPrank();
+    }
+
+    function testAddToBlackListDouble() public {
+        vm.startPrank(deployer);
+
+        presale.blackList(user2);
+
+        bool blacklisted = presale.isBlacklisted(user2);
+
+        assertTrue(blacklisted);
+
+        vm.expectRevert("Already blacklisted.");
+        presale.blackList(user2);
+
+        vm.stopPrank();
+    }
+
+    function testRemoveFromBlackList() public {
+        vm.startPrank(deployer);
+
+        presale.blackList(user2);
+
+        bool blacklisted = presale.isBlacklisted(user2);
+
+        assertTrue(blacklisted);
+
+        presale.removeBlackList(user2);
+
+        bool blacklisted2 = presale.isBlacklisted(user2);
+
+        assertTrue(!blacklisted2);
+    }
+
+    function testRemoveFromBlackListNotBlacklisted() public {
+        vm.startPrank(deployer);
+
+        vm.expectRevert("Not blacklisted.");
+        presale.removeBlackList(user2);
+    }
+
+    function testEmergencyERC20Withdraw() public {
+        vm.startPrank(deployer);
+
+        uint amountToWithdraw = 1_000_000 * 1e18;
+        address tokenToWithdraw = address(mockToken);
+
+        uint presaleBalanceBefore = IERC20(tokenToWithdraw).balanceOf(address(presale));
+
+        presale.emergencyERC20Withdraw(tokenToWithdraw, amountToWithdraw);
+
+        uint presaleBalanceAfter = IERC20(tokenToWithdraw).balanceOf(address(presale));
+
+        assertEq(presaleBalanceAfter, presaleBalanceBefore - amountToWithdraw);
+    }
+
+    function testEmergencyETHWithdraw() public {
+        vm.startPrank(deployer);
+
+        uint amountToWithdraw = 90 ether;
+
+        vm.deal(deployer, 101 ether);
+
+        (bool success, ) = address(presale).call{value: 100 ether}("");
+        require(success, "Transfer failed!!");
+
+        uint balanceBefore = address(presale).balance;
+
+        presale.emergencyNativeWithdraw(amountToWithdraw);
+
+        uint balanceAfter = address(presale).balance;
+
+        assertEq(balanceAfter, balanceBefore - amountToWithdraw);
     }
 }
